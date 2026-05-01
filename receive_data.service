@@ -1,0 +1,15 @@
+[Unit]
+Description=Environmental Data Logger Receiver
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=matthew
+WorkingDirectory=/home/matthew/environmental_data_logger/esp32-environmental-data-logger
+ExecStart=/usr/bin/python3 /home/matthew/environmental_data_logger/esp32-environmental-data-logger/receive_data.py
+Restart=always
+RestartSec=5
+
+[Install]
+WantedBy=multi-user.target

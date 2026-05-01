@@ -1,122 +1,163 @@
-import serial
-import os.path
-import time
-import pandas as pd
+import json
 import os
+import time
+from http.server import BaseHTTPRequestHandler, HTTPServer
 
-ser = serial.Serial(port = 'COM3', baudrate = 9600)  #Open the serial port with the specified port and baud rate
-header = "Time,Temperature (F),Pressure (hPa),Humidity (%),Gas (KOhms),Altitude (ft)\n"
+import pandas as pd
 
-def write_data(data, timestamp, header, attempt):
-    if os.path.exists("data.csv"):
-            if attempt == 0:
-                print("File exists") #On first attempt, check if file exists and print message. On subsequent attempts, skip this step to avoid redundant messages.
 
-            with open("data.csv", "a") as file:
-                file.write(timestamp + "," + data +"\n")  # Append the data to the CSV file
+HOST = "0.0.0.0"
+PORT = 8000
+DATA_FILE = "data.csv"
+ARCHIVE_FILE = "archive.csv"
+HEADER = "Time,Temperature (F),Pressure (hPa),Humidity (%),Gas (KOhms),Altitude (ft)\n"
 
-    else:
-            if attempt == 0:
-                print("File does not exist. Creating new file.") #On first attempt, check if file exists and print message. On subsequent attempts, skip this step to avoid redundant messages.
-                
-            with open("data.csv", "w") as file: #If the file does not exist, create a new file and write the header and data.
-                file.write(header)
-                file.write(timestamp + "," + data + "\n")
 
-def archive_data(df=pd.DataFrame(), quartile_size=int, columns=list):
+def ensure_file_exists(path, initial_contents=""):
+    if not os.path.exists(path):
+        with open(path, "w", encoding="utf-8") as file:
+            file.write(initial_contents)
+
+
+def extract_date_string(value):
+    parsed = pd.to_datetime(str(value), errors="coerce")
+    if pd.notna(parsed):
+        return parsed.strftime("%Y-%m-%d")
+
+    return time.strftime("%Y-%m-%d", time.localtime())
+
+
+def write_data(readings):
+    ensure_file_exists(DATA_FILE, HEADER)
+    timestamp = time.strftime("%Y-%m-%d %H:%M:%S", time.localtime())
+
+    row = ",".join(
+        [
+            timestamp,
+            str(readings["temperature_f"]),
+            str(readings["pressure_hpa"]),
+            str(readings["humidity_pct"]),
+            str(readings["gas_kohms"]),
+            str(readings["altitude_ft"]),
+        ]
+    )
+
+    with open(DATA_FILE, "a", encoding="utf-8") as file:
+        file.write(row + "\n")
+
+
+def archive_data(df, quartile_size, columns):
     quartiles = [
         df.iloc[0:quartile_size],
-        df.iloc[quartile_size:2*quartile_size],
-        df.iloc[2*quartile_size:3*quartile_size],
-        df.iloc[3*quartile_size:]
+        df.iloc[quartile_size : 2 * quartile_size],
+        df.iloc[2 * quartile_size : 3 * quartile_size],
+        df.iloc[3 * quartile_size :],
     ]
 
-    date = df.tail(1)["Time"].iloc[0][:10]
-    archive_lines = ["Date:," + date + "\n"]  # Newest archive block goes first, like pushing onto a stack.
+    date = extract_date_string(df.tail(1)["Time"].iloc[0])
+    archive_lines = ["Date:," + date + "\n"]
     for i, quartile in enumerate(quartiles):
         means = []
         for column in columns:
-            mean = quartile[column].mean() #Calculate the mean of the current column in the current quartile
-            means.append(mean) 
-        archive_lines.append(f"Quartile {i+1}," + ",".join(map(str, means)) + "\n")
+            if quartile.empty:
+                means.append("")
+            else:
+                means.append(quartile[column].mean())
+        archive_lines.append(f"Quartile {i + 1}," + ",".join(map(str, means)) + "\n")
 
-    if os.path.exists("archive.csv"):
-        with open("archive.csv", "r") as file:
+    if os.path.exists(ARCHIVE_FILE):
+        with open(ARCHIVE_FILE, "r", encoding="utf-8") as file:
             existing_contents = file.read()
     else:
         existing_contents = ""
 
-    with open("archive.csv", "w") as file:
+    with open(ARCHIVE_FILE, "w", encoding="utf-8") as file:
         file.writelines(archive_lines)
         file.write(existing_contents)
 
-    # os.remove("data.csv") #Remove the original CSV file after archiving the data to start fresh with a new file for incoming data.
-    #Call the function to check if the data needs to be archived based on the dates of the last two entries in the CSV file.
 
-def reset_data_file_for_new_day(latest_row, header):
-    if os.path.exists("data.csv"):
-        os.remove("data.csv")
-
+def reset_data_file_for_new_day(latest_row):
     row_values = [str(value) for value in latest_row.tolist()]
-    with open("data.csv", "w") as file:
-        file.write(header)
+    with open(DATA_FILE, "w", encoding="utf-8") as file:
+        file.write(HEADER)
         file.write(",".join(row_values) + "\n")
 
+
+def archive_if_needed():
+    ensure_file_exists(DATA_FILE, HEADER)
+    ensure_file_exists(ARCHIVE_FILE)
+
+    df = pd.read_csv(DATA_FILE)
+    if df.empty:
+        return
+
+    current_date = extract_date_string(df.tail(1)["Time"].iloc[0])
+    previous_date = extract_date_string(df.iloc[-2]["Time"]) if len(df) > 1 else current_date
+
+    with open(ARCHIVE_FILE, "r", encoding="utf-8") as file:
+        lines = file.readlines()
+
+    archive_date = extract_date_string(lines[0].split(",")[1].strip()) if lines else None
+    columns = df.columns[1:]
+    quartile_size = max(1, len(df) // 4)
+
+    if current_date != previous_date and current_date != archive_date:
+        previous_day_df = df.iloc[:-1].copy()
+        if not previous_day_df.empty:
+            previous_day_quartile_size = max(1, len(previous_day_df) // 4)
+            archive_data(previous_day_df, previous_day_quartile_size, columns)
+            reset_data_file_for_new_day(df.iloc[-1])
+    elif archive_date is None:
+        archive_data(df, quartile_size, columns)
+
+
+class SensorRequestHandler(BaseHTTPRequestHandler):
+    def do_POST(self):
+        if self.path != "/sensor-data":
+            self.send_error(404, "Not found")
+            return
+
+        content_length = int(self.headers.get("Content-Length", 0))
+        raw_body = self.rfile.read(content_length)
+
+        try:
+            payload = json.loads(raw_body.decode("utf-8"))
+        except json.JSONDecodeError:
+            self.send_error(400, "Invalid JSON")
+            return
+
+        required_fields = {
+            "temperature_f",
+            "pressure_hpa",
+            "humidity_pct",
+            "gas_kohms",
+            "altitude_ft",
+        }
+        missing_fields = required_fields - payload.keys()
+        if missing_fields:
+            self.send_error(400, f"Missing fields: {', '.join(sorted(missing_fields))}")
+            return
+
+        write_data(payload)
+        archive_if_needed()
+
+        self.send_response(200)
+        self.send_header("Content-Type", "application/json")
+        self.end_headers()
+        self.wfile.write(b'{"status":"ok"}')
+
+    def log_message(self, format, *args):
+        return
+
+
 def main():
-    attempt = 0
-    while True:
-        
-        if ser.in_waiting > 0: # Check if there is data waiting to be read from the serial port
-            timestamp = time.strftime("%Y-%m-%d %H:%M:%S", time.localtime())
+    ensure_file_exists(DATA_FILE, HEADER)
+    ensure_file_exists(ARCHIVE_FILE)
 
-            data = ser.readline().decode('utf-8').rstrip()  # Read a line of data and decode it
-            write_data(data, timestamp, header, attempt) # Call the function to write the data to the CSV file
-            
-            attempt = 1
+    server = HTTPServer((HOST, PORT), SensorRequestHandler)
+    print(f"Listening for sensor data on http://{HOST}:{PORT}/sensor-data")
+    server.serve_forever()
 
-        if not os.path.exists("archive.csv"):
-            with open("archive.csv", "w"):
-                pass
-
-        df= pd.read_csv("data.csv") 
-        if not os.path.exists("archive.csv") or os.path.getsize("archive.csv") == 0:
-            archive_df = pd.DataFrame()
-        else:
-            archive_df = pd.read_csv("archive.csv")
-        current_date = df.tail(1)["Time"].iloc[0][:10]
-        previous_date = df.iloc[-2]["Time"][:10] if len(df) > 1 else current_date
-        with open("archive.csv", "r") as file:
-            lines = file.readlines()
-
-        if len(lines) == 0:
-            archive_date = None
-        else:
-            archive_date = lines[0].split(",")[1].strip()
-        
-        number_of_rows = df.shape[0] #Get the number of rows in the CSV file to determine if it is empty or not.
-        quartile_size = len(df) // 4 #Calculate the size of each quartile based on the total number of rows in the CSV file.
-        columns = df.columns[1:] #Get the column names from the DataFrame, excluding the first column which is the timestamp.
-
-        if current_date != previous_date and current_date != archive_date:
-            previous_day_df = df.iloc[:-1].copy()
-
-            if not previous_day_df.empty:
-                previous_day_quartile_size = len(previous_day_df) // 4
-                archive_data(previous_day_df, previous_day_quartile_size, columns)
-                reset_data_file_for_new_day(df.iloc[-1], header)
-                continue
-        elif archive_date is None:
-            archive_data(df, quartile_size, columns)
-        
-        
-        pass
-      
-        # If the date of the second to last entry is different from the date of the last entry, call the function to archive the data and start a new file for incoming data.
 
 if __name__ == "__main__":
     main()
-print("connected to " + ser.portstr) #pring to console
-
-
-
-    # Create a new CSV file and write the data

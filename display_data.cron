@@ -1,0 +1,1 @@
+*/5 * * * * cd /home/matthew/environmental_data_logger/esp32-environmental-data-logger && /usr/bin/python3 display_data.py >> /home/matthew/environmental_data_logger/esp32-environmental-data-logger/display_data.log 2>&1

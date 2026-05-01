@@ -1,0 +1,6 @@
+#!/home/matthew/environmental_data_logger/esp32-environmental-data-logger/.venv/bin/python
+import sys
+from libfuturize.main import main
+if __name__ == '__main__':
+    sys.argv[0] = sys.argv[0].removesuffix('.exe')
+    sys.exit(main())
