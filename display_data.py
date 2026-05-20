@@ -1,3 +1,9 @@
+"""Render the latest environmental data as an Inky/e-paper dashboard.
+
+This module can run on a Raspberry Pi with Inky hardware attached, or on a
+development machine where it writes only a preview PNG.
+"""
+
 import argparse
 from pathlib import Path
 
@@ -39,6 +45,7 @@ FONT_CANDIDATES = {
 
 
 def load_font(kind, size):
+    """Load the first available font for a display role, or PIL's default."""
     for candidate in FONT_CANDIDATES[kind]:
         path = Path(candidate)
         if path.exists():
@@ -47,6 +54,7 @@ def load_font(kind, size):
 
 
 def load_data():
+    """Read data.csv and return readings sorted by valid timestamp."""
     if not DATA_FILE.exists():
         raise FileNotFoundError("data.csv was not found.")
 
@@ -63,12 +71,14 @@ def load_data():
 
 
 def format_delta(current, previous, unit, decimals=1):
+    """Format the signed change between the latest and previous reading."""
     delta = current - previous
     sign = "+" if delta >= 0 else "-"
     return f"{sign}{abs(delta):.{decimals}f}{unit}"
 
 
 def metric_block(draw, xy, size, label, value, unit, delta=None, accent=ACCENT_WARM):
+    """Draw one dashboard metric tile with an optional change badge."""
     x, y = xy
     w, h = size
     draw.rounded_rectangle((x, y, x + w, y + h), radius=18, fill=PANEL, outline=GRID, width=2)
@@ -87,6 +97,7 @@ def metric_block(draw, xy, size, label, value, unit, delta=None, accent=ACCENT_W
 
 
 def render_dashboard(df, width, height):
+    """Create a dashboard image from the latest readings."""
     latest = df.iloc[-1]
     previous = df.iloc[-2] if len(df) > 1 else latest
 
@@ -174,15 +185,11 @@ def render_dashboard(df, width, height):
     return image
 
 
-def main():
-    parser = argparse.ArgumentParser(description="Render the latest environmental data to an Inky display.")
-    parser.add_argument("--preview", default="display_preview.png", help="Preview image output path.")
-    parser.add_argument("--no-hardware", action="store_true", help="Skip the physical display update.")
-    args = parser.parse_args()
-
+def update_display(preview="display_preview.png", no_hardware=False):
+    """Render the dashboard, update Inky when available, and save a preview."""
     df = load_data()
 
-    if auto is not None and not args.no_hardware:
+    if auto is not None and not no_hardware:
         display = auto()
         width, height = display.resolution
         image = render_dashboard(df, width, height)
@@ -193,9 +200,19 @@ def main():
         width, height = DEFAULT_WIDTH, DEFAULT_HEIGHT
         image = render_dashboard(df, width, height)
 
-    preview_path = Path(args.preview)
+    preview_path = Path(preview)
     image.save(preview_path)
     print(f"Saved preview to {preview_path}.")
+
+
+def main():
+    """Parse CLI flags and render the dashboard."""
+    parser = argparse.ArgumentParser(description="Render the latest environmental data to an Inky display.")
+    parser.add_argument("--preview", default="display_preview.png", help="Preview image output path.")
+    parser.add_argument("--no-hardware", action="store_true", help="Skip the physical display update.")
+    args = parser.parse_args()
+
+    update_display(preview=args.preview, no_hardware=args.no_hardware)
 
 
 if __name__ == "__main__":

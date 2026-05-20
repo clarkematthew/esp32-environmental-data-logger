@@ -1,3 +1,10 @@
+"""Receive, store, archive, and display BME680 readings from the ESP32.
+
+The ESP32 sends JSON readings to POST /sensor-data. Each accepted reading is
+appended to data.csv, daily readings are summarized into archive.csv, and the
+Inky/e-paper dashboard preview is refreshed after every successful write.
+"""
+
 import json
 import os
 import time
@@ -5,6 +12,7 @@ from http.server import BaseHTTPRequestHandler, HTTPServer
 
 import pandas as pd
 
+from display_data import update_display
 
 HOST = "0.0.0.0"
 PORT = 8000
@@ -13,13 +21,16 @@ ARCHIVE_FILE = "archive.csv"
 HEADER = "Time,Temperature (F),Pressure (hPa),Humidity (%),Gas (KOhms),Altitude (ft)\n"
 
 
+
 def ensure_file_exists(path, initial_contents=""):
+    """Create a file with optional starter contents when it does not exist."""
     if not os.path.exists(path):
         with open(path, "w", encoding="utf-8") as file:
             file.write(initial_contents)
 
 
 def extract_date_string(value):
+    """Return YYYY-MM-DD from a timestamp-like value, falling back to today."""
     parsed = pd.to_datetime(str(value), errors="coerce")
     if pd.notna(parsed):
         return parsed.strftime("%Y-%m-%d")
@@ -28,6 +39,7 @@ def extract_date_string(value):
 
 
 def write_data(readings):
+    """Append one validated sensor reading to the active CSV data log."""
     ensure_file_exists(DATA_FILE, HEADER)
     timestamp = time.strftime("%Y-%m-%d %H:%M:%S", time.localtime())
 
@@ -47,6 +59,7 @@ def write_data(readings):
 
 
 def archive_data(df, quartile_size, columns):
+    """Prepend quartile averages for a day's readings to the archive file."""
     quartiles = [
         df.iloc[0:quartile_size],
         df.iloc[quartile_size : 2 * quartile_size],
@@ -77,6 +90,7 @@ def archive_data(df, quartile_size, columns):
 
 
 def reset_data_file_for_new_day(latest_row):
+    """Start a fresh data.csv for the new day while keeping the newest reading."""
     row_values = [str(value) for value in latest_row.tolist()]
     with open(DATA_FILE, "w", encoding="utf-8") as file:
         file.write(HEADER)
@@ -84,6 +98,7 @@ def reset_data_file_for_new_day(latest_row):
 
 
 def archive_if_needed():
+    """Archive the previous day once a reading from a new day arrives."""
     ensure_file_exists(DATA_FILE, HEADER)
     ensure_file_exists(ARCHIVE_FILE)
 
@@ -112,7 +127,10 @@ def archive_if_needed():
 
 
 class SensorRequestHandler(BaseHTTPRequestHandler):
+    """HTTP handler for incoming ESP32 sensor payloads."""
+
     def do_POST(self):
+        """Validate incoming JSON and persist it as one sensor reading."""
         if self.path != "/sensor-data":
             self.send_error(404, "Not found")
             return
@@ -145,12 +163,20 @@ class SensorRequestHandler(BaseHTTPRequestHandler):
         self.send_header("Content-Type", "application/json")
         self.end_headers()
         self.wfile.write(b'{"status":"ok"}')
+        self.wfile.flush()
+
+        try:
+            update_display()
+        except Exception as error:
+            print(f"Display update failed: {error}")
 
     def log_message(self, format, *args):
+        """Silence the default request logs during normal sensor polling."""
         return
 
 
 def main():
+    """Start the sensor data HTTP server."""
     ensure_file_exists(DATA_FILE, HEADER)
     ensure_file_exists(ARCHIVE_FILE)
 

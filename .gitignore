@@ -1,0 +1,9 @@
+.vscode/
+.pio/
+__pycache__/
+*.pyc
+*.log
+
+src/secrets/credentials.h
+script/secrets/credentials.h
+"environmental data logger"/src/secrets/
