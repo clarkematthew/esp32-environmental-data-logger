@@ -6,9 +6,9 @@ This project uses an ESP32 and a BME680 sensor to track indoor environmental
 conditions. The ESP32 reads temperature, pressure, humidity, gas resistance, and
 estimated altitude, then sends the readings over WiFi to a Python server.
 
-The Python code saves the current readings in `data.csv`, keeps older daily
-summaries in `archive.csv`, and updates a dashboard image for an e-paper
-display or local preview.
+The Python code saves the current readings in `data/data.csv`, keeps older
+daily summaries in `data/archive.csv`, and updates a dashboard image for an
+e-paper display or local preview.
 
 The goal of this project was to build a small end-to-end data logging system
 that connects embedded hardware, networking, Python data handling, and a simple
@@ -38,21 +38,23 @@ The BME680 communicates with the ESP32 over I2C.
 1. The ESP32 connects to WiFi and starts the BME680 sensor.
 2. Every five minutes, it reads the current sensor values.
 3. The ESP32 sends a JSON payload to the Python server at `/sensor-data`.
-4. `receive_data.py` checks the payload and appends the reading to `data.csv`.
-5. When a new day starts, the previous day's readings are summarized into `archive.csv`.
-6. `display_data.py` renders the newest readings into `display_preview.png` and updates the e-paper display when hardware is available.
+4. `receiver/receive_data.py` checks the payload and appends the reading to `data/data.csv`.
+5. When a new day starts, the previous day's readings are summarized into `data/archive.csv`.
+6. `receiver/display_data.py` renders the newest readings into `data/display_preview.png` and updates the e-paper display when hardware is available.
 
 ## Project Files
 
 - `platformio.ini` - PlatformIO configuration for building and uploading the ESP32 firmware.
 - `src/main.cpp` - ESP32 firmware for reading the sensor and sending data over WiFi.
 - `src/credentials.example.h` - Example WiFi and server configuration.
-- `receive_data.py` - Python HTTP server that receives and stores sensor readings.
-- `display_data.py` - Creates the dashboard image for preview or e-paper display.
-- `data.csv` - Current active readings.
-- `archive.csv` - Daily archived summaries.
-- `receive_data.service` - systemd service file for running the receiver automatically.
-- `install_receive_service.sh` - Installs and starts the receiver service.
+- `receiver/receive_data.py` - Python HTTP server that receives and stores sensor readings.
+- `receiver/display_data.py` - Creates the dashboard image for preview or e-paper display.
+- `receiver/requirements.txt` - Python dependencies for the receiver/display scripts.
+- `receiver/receive_data.service` - Example systemd service file for running the receiver automatically.
+- `receiver/install_receive_service.sh` - Installs and starts the receiver service.
+- `data/data.csv` - Current active readings.
+- `data/archive.csv` - Daily archived summaries.
+- `data/display_preview.png` - Latest rendered dashboard preview.
 
 ## ESP32 Setup
 
@@ -75,19 +77,19 @@ by Git so WiFi credentials are not published.
 Install the Python packages:
 
 ```bash
-pip install pandas pillow
+pip install -r receiver/requirements.txt
 ```
 
 Run the receiver:
 
 ```bash
-python3 receive_data.py
+python3 receiver/receive_data.py
 ```
 
 Render a dashboard preview without updating hardware:
 
 ```bash
-python3 display_data.py --no-hardware --preview display_preview.png
+python3 receiver/display_data.py --no-hardware
 ```
 
 ## Data Format
@@ -104,7 +106,7 @@ The ESP32 sends JSON like this:
 }
 ```
 
-The Python server adds the timestamp and stores the row in `data.csv`:
+The Python server adds the timestamp and stores the row in `data/data.csv`:
 
 ```csv
 Time,Temperature (F),Pressure (hPa),Humidity (%),Gas (KOhms),Altitude (ft)

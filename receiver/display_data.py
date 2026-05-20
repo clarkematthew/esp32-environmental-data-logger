@@ -16,7 +16,10 @@ except ImportError:  # Allows local previewing on non-Pi machines.
     auto = None
 
 
-DATA_FILE = Path("data.csv")
+PROJECT_DIR = Path(__file__).resolve().parents[1]
+DATA_DIR = PROJECT_DIR / "data"
+DATA_FILE = DATA_DIR / "data.csv"
+DEFAULT_PREVIEW = DATA_DIR / "display_preview.png"
 DEFAULT_WIDTH = 800
 DEFAULT_HEIGHT = 480
 BACKGROUND = "#f6f1e8"
@@ -56,7 +59,7 @@ def load_font(kind, size):
 def load_data():
     """Read data.csv and return readings sorted by valid timestamp."""
     if not DATA_FILE.exists():
-        raise FileNotFoundError("data.csv was not found.")
+        raise FileNotFoundError(f"{DATA_FILE} was not found.")
 
     df = pd.read_csv(DATA_FILE)
     if df.empty:
@@ -185,7 +188,7 @@ def render_dashboard(df, width, height):
     return image
 
 
-def update_display(preview="display_preview.png", no_hardware=False):
+def update_display(preview=None, no_hardware=False):
     """Render the dashboard, update Inky when available, and save a preview."""
     df = load_data()
 
@@ -200,7 +203,8 @@ def update_display(preview="display_preview.png", no_hardware=False):
         width, height = DEFAULT_WIDTH, DEFAULT_HEIGHT
         image = render_dashboard(df, width, height)
 
-    preview_path = Path(preview)
+    preview_path = Path(preview) if preview is not None else DEFAULT_PREVIEW
+    preview_path.parent.mkdir(parents=True, exist_ok=True)
     image.save(preview_path)
     print(f"Saved preview to {preview_path}.")
 
@@ -208,7 +212,7 @@ def update_display(preview="display_preview.png", no_hardware=False):
 def main():
     """Parse CLI flags and render the dashboard."""
     parser = argparse.ArgumentParser(description="Render the latest environmental data to an Inky display.")
-    parser.add_argument("--preview", default="display_preview.png", help="Preview image output path.")
+    parser.add_argument("--preview", default=str(DEFAULT_PREVIEW), help="Preview image output path.")
     parser.add_argument("--no-hardware", action="store_true", help="Skip the physical display update.")
     args = parser.parse_args()
 

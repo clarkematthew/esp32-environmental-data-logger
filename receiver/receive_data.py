@@ -9,6 +9,7 @@ import json
 import os
 import time
 from http.server import BaseHTTPRequestHandler, HTTPServer
+from pathlib import Path
 
 import pandas as pd
 
@@ -16,14 +17,18 @@ from display_data import update_display
 
 HOST = "0.0.0.0"
 PORT = 8000
-DATA_FILE = "data.csv"
-ARCHIVE_FILE = "archive.csv"
+PROJECT_DIR = Path(__file__).resolve().parents[1]
+DATA_DIR = PROJECT_DIR / "data"
+DATA_FILE = DATA_DIR / "data.csv"
+ARCHIVE_FILE = DATA_DIR / "archive.csv"
 HEADER = "Time,Temperature (F),Pressure (hPa),Humidity (%),Gas (KOhms),Altitude (ft)\n"
 
 
 
 def ensure_file_exists(path, initial_contents=""):
     """Create a file with optional starter contents when it does not exist."""
+    path = Path(path)
+    path.parent.mkdir(parents=True, exist_ok=True)
     if not os.path.exists(path):
         with open(path, "w", encoding="utf-8") as file:
             file.write(initial_contents)
