@@ -44,8 +44,9 @@ The BME680 communicates with the ESP32 over I2C.
 
 ## Project Files
 
-- `script/script.ino` - ESP32 firmware for reading the sensor and sending data over WiFi.
-- `script/credentials.example.h` - Example WiFi and server configuration.
+- `platformio.ini` - PlatformIO configuration for building and uploading the ESP32 firmware.
+- `src/main.cpp` - ESP32 firmware for reading the sensor and sending data over WiFi.
+- `src/credentials.example.h` - Example WiFi and server configuration.
 - `receive_data.py` - Python HTTP server that receives and stores sensor readings.
 - `display_data.py` - Creates the dashboard image for preview or e-paper display.
 - `data.csv` - Current active readings.
@@ -55,7 +56,7 @@ The BME680 communicates with the ESP32 over I2C.
 
 ## ESP32 Setup
 
-Copy `script/credentials.example.h` to `script/secrets/credentials.h` and fill
+Copy `src/credentials.example.h` to `src/secrets/credentials.h` and fill
 in the WiFi name, WiFi password, and server URL:
 
 ```cpp
@@ -64,8 +65,10 @@ const char* WIFI_PASSWORD = "your-wifi-password";
 const char* SERVER_URL = "http://your-server-ip:8000/sensor-data";
 ```
 
-The ESP32 sketch uses the Adafruit BME680 library and sends readings with the
-Arduino `HTTPClient` library.
+Open the repo in PlatformIO, then build and upload the firmware to your ESP32.
+The firmware uses the Adafruit BME680 library and sends readings with the
+Arduino `HTTPClient` library. Your real `src/secrets/credentials.h` is ignored
+by Git so WiFi credentials are not published.
 
 ## Python Setup
 

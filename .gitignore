@@ -1,5 +1,6 @@
 .vscode/
 .pio/
+.venv/
 __pycache__/
 *.pyc
 *.log
